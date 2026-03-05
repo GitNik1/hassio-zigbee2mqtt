@@ -1,5 +1,5 @@
 {
-  "name": "Zigbee2MQTT-Keller",
+  "name": "Zigbee2MQTT-Bastelraum",
   "version": "2.9.1-1",
   "slug": "zigbee2mqtt",
   "description": "Use your ZigBee devices without the vendor's bridge or gateway",
@@ -40,7 +40,7 @@
     }
   ],
   "ports": {
-    "8485/tcp": 8485,
+    "8485/tcp": 8486,
     "8099/tcp": null
   },
   "ports_description": {
@@ -48,7 +48,7 @@
     "8099/tcp": "Frontend tcp-listen port"
   },
   "options": {
-    "data_path": "/config/zigbee2mqttKeller",
+    "data_path": "/config/zigbee2mqttBastelraum",
     "socat": {
       "enabled": false,
       "master": "pty,raw,echo=0,link=/tmp/ttyZ2M,mode=777",
