@@ -1,5 +1,5 @@
 {
-  "name": "Zigbee2MQTT-Keller",
+  "name": "Z2M-Keller",
   "version": "2.9.1-1",
   "slug": "zigbee2mqtt-keller",
   "description": "Use your ZigBee devices without the vendor's bridge or gateway",

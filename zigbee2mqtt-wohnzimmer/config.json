@@ -1,5 +1,5 @@
 {
-  "name": "Zigbee2MQTT-Wohnung",
+  "name": "Z2M-Wohnung",
   "version": "2.9.1-1",
   "slug": "zigbee2mqtt-wohnzimmer",
   "description": "Use your ZigBee devices without the vendor's bridge or gateway",
