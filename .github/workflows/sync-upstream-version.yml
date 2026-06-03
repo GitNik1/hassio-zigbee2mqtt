@@ -15,61 +15,76 @@ jobs:
       - name: Checkout fork
         uses: actions/checkout@v4
 
-      - name: Fetch upstream config.json
+      - name: Fetch upstream files
         run: |
           curl -fsSL \
             https://raw.githubusercontent.com/zigbee2mqtt/hassio-zigbee2mqtt/master/zigbee2mqtt/config.json \
             -o upstream-config.json
+          curl -fsSL \
+            https://raw.githubusercontent.com/zigbee2mqtt/hassio-zigbee2mqtt/master/zigbee2mqtt/CHANGELOG.md \
+            -o upstream-CHANGELOG.md
           echo "Upstream version:  $(jq -r '.version' upstream-config.json)"
           echo "Upstream breaking: $(jq -c '.breaking_versions' upstream-config.json)"
 
-      - name: Update all fork configs
+      - name: Update all fork targets
         id: update
         run: |
           UP_VERSION=$(jq -r '.version' upstream-config.json)
           UP_BREAKING=$(jq -c '.breaking_versions' upstream-config.json)
 
           TARGETS=(
-            "zigbee2mqtt-bastelraum/config.json"
-            "zigbee2mqtt-keller/config.json"
-            "zigbee2mqtt-wohnzimmer/config.json"
+            "zigbee2mqtt-bastelraum"
+            "zigbee2mqtt-keller"
+            "zigbee2mqtt-wohnzimmer"
           )
 
           changed=false
-          for TARGET in "${TARGETS[@]}"; do
-            if [ ! -f "$TARGET" ]; then
-              echo "::warning::$TARGET not found, skipping"
+          for DIR in "${TARGETS[@]}"; do
+            CFG="$DIR/config.json"
+            LOG="$DIR/CHANGELOG.md"
+
+            if [ ! -f "$CFG" ]; then
+              echo "::warning::$CFG not found, skipping $DIR"
               continue
             fi
 
-            CUR_VERSION=$(jq -r '.version' "$TARGET")
-            CUR_BREAKING=$(jq -c '.breaking_versions' "$TARGET")
-            echo "→ $TARGET: current $CUR_VERSION / $CUR_BREAKING"
+            # ----- config.json: nur version + breaking_versions -----
+            CUR_VERSION=$(jq -r '.version' "$CFG")
+            CUR_BREAKING=$(jq -c '.breaking_versions' "$CFG")
+            echo "→ $CFG: current $CUR_VERSION / $CUR_BREAKING"
 
-            if [ "$CUR_VERSION" = "$UP_VERSION" ] && [ "$CUR_BREAKING" = "$UP_BREAKING" ]; then
-              echo "  already up-to-date"
-              continue
+            if [ "$CUR_VERSION" != "$UP_VERSION" ] || [ "$CUR_BREAKING" != "$UP_BREAKING" ]; then
+              jq --arg v "$UP_VERSION" --argjson b "$UP_BREAKING" \
+                 '.version = $v | .breaking_versions = $b' \
+                 "$CFG" > "$CFG.tmp"
+              mv "$CFG.tmp" "$CFG"
+              echo "  config updated to $UP_VERSION"
+              changed=true
+            else
+              echo "  config already up-to-date"
             fi
 
-            jq --arg v "$UP_VERSION" --argjson b "$UP_BREAKING" \
-               '.version = $v | .breaking_versions = $b' \
-               "$TARGET" > "$TARGET.tmp"
-            mv "$TARGET.tmp" "$TARGET"
-            echo "  updated to $UP_VERSION"
-            changed=true
+            # ----- CHANGELOG.md: komplett ersetzen -----
+            if [ ! -f "$LOG" ] || ! cmp -s upstream-CHANGELOG.md "$LOG"; then
+              cp upstream-CHANGELOG.md "$LOG"
+              echo "  CHANGELOG updated"
+              changed=true
+            else
+              echo "  CHANGELOG already up-to-date"
+            fi
           done
 
           echo "changed=$changed" >> "$GITHUB_OUTPUT"
           echo "upstream_version=$UP_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Cleanup
-        run: rm -f upstream-config.json
+        run: rm -f upstream-config.json upstream-CHANGELOG.md
 
       - name: Commit & push
         if: steps.update.outputs.changed == 'true'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add zigbee2mqtt-*/config.json
-          git commit -m "chore: sync version ${{ steps.update.outputs.upstream_version }} from upstream"
+          git add zigbee2mqtt-*/config.json zigbee2mqtt-*/CHANGELOG.md
+          git commit -m "chore: sync version ${{ steps.update.outputs.upstream_version }} & CHANGELOG from upstream"
           git push
