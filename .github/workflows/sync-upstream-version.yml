@@ -2,7 +2,7 @@ name: Sync version from upstream
 
 on:
   schedule:
-    - cron: '0 6 * * *'        # täglich 06:00 UTC
+    - cron: '0 6 * * *'
   workflow_dispatch:
 
 permissions:
@@ -20,32 +20,47 @@ jobs:
           curl -fsSL \
             https://raw.githubusercontent.com/zigbee2mqtt/hassio-zigbee2mqtt/master/zigbee2mqtt/config.json \
             -o upstream-config.json
+          echo "Upstream version:  $(jq -r '.version' upstream-config.json)"
+          echo "Upstream breaking: $(jq -c '.breaking_versions' upstream-config.json)"
 
-      - name: Extract values
-        id: extract
+      - name: Update all fork configs
+        id: update
         run: |
           UP_VERSION=$(jq -r '.version' upstream-config.json)
           UP_BREAKING=$(jq -c '.breaking_versions' upstream-config.json)
-          CUR_VERSION=$(jq -r '.version' zigbee2mqtt-bastelraum/config.json)
-          CUR_BREAKING=$(jq -c '.breaking_versions' zigbee2mqtt-bastelraum/config.json)
-          echo "upstream_version=$UP_VERSION"   >> "$GITHUB_OUTPUT"
-          echo "upstream_breaking=$UP_BREAKING" >> "$GITHUB_OUTPUT"
-          echo "current_version=$CUR_VERSION"   >> "$GITHUB_OUTPUT"
-          echo "current_breaking=$CUR_BREAKING" >> "$GITHUB_OUTPUT"
-          echo "Upstream: $UP_VERSION / $UP_BREAKING"
-          echo "Current:  $CUR_VERSION / $CUR_BREAKING"
 
-      - name: Update fork config.json if changed
-        id: update
-        if: steps.extract.outputs.upstream_version != steps.extract.outputs.current_version || steps.extract.outputs.upstream_breaking != steps.extract.outputs.current_breaking
-        run: |
-          TARGET=zigbee2mqtt-bastelraum/config.json
-          jq --arg v "${{ steps.extract.outputs.upstream_version }}" \
-             --argjson b '${{ steps.extract.outputs.upstream_breaking }}' \
-             '.version = $v | .breaking_versions = $b' \
-             "$TARGET" > "$TARGET.tmp"
-          mv "$TARGET.tmp" "$TARGET"
-          echo "changed=true" >> "$GITHUB_OUTPUT"
+          TARGETS=(
+            "zigbee2mqtt-bastelraum/config.json"
+            "zigbee2mqtt-keller/config.json"
+            "zigbee2mqtt-wohnzimmer/config.json"
+          )
+
+          changed=false
+          for TARGET in "${TARGETS[@]}"; do
+            if [ ! -f "$TARGET" ]; then
+              echo "::warning::$TARGET not found, skipping"
+              continue
+            fi
+
+            CUR_VERSION=$(jq -r '.version' "$TARGET")
+            CUR_BREAKING=$(jq -c '.breaking_versions' "$TARGET")
+            echo "→ $TARGET: current $CUR_VERSION / $CUR_BREAKING"
+
+            if [ "$CUR_VERSION" = "$UP_VERSION" ] && [ "$CUR_BREAKING" = "$UP_BREAKING" ]; then
+              echo "  already up-to-date"
+              continue
+            fi
+
+            jq --arg v "$UP_VERSION" --argjson b "$UP_BREAKING" \
+               '.version = $v | .breaking_versions = $b' \
+               "$TARGET" > "$TARGET.tmp"
+            mv "$TARGET.tmp" "$TARGET"
+            echo "  updated to $UP_VERSION"
+            changed=true
+          done
+
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          echo "upstream_version=$UP_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Cleanup
         run: rm -f upstream-config.json
@@ -55,6 +70,6 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add zigbee2mqtt-bastelraum/config.json
-          git commit -m "chore: sync version ${{ steps.extract.outputs.upstream_version }} from upstream"
+          git add zigbee2mqtt-*/config.json
+          git commit -m "chore: sync version ${{ steps.update.outputs.upstream_version }} from upstream"
           git push
