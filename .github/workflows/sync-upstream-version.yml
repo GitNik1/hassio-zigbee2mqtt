@@ -1,0 +1,60 @@
+name: Sync version from upstream
+
+on:
+  schedule:
+    - cron: '0 6 * * *'        # täglich 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+
+      - name: Fetch upstream config.json
+        run: |
+          curl -fsSL \
+            https://raw.githubusercontent.com/zigbee2mqtt/hassio-zigbee2mqtt/master/zigbee2mqtt/config.json \
+            -o upstream-config.json
+
+      - name: Extract values
+        id: extract
+        run: |
+          UP_VERSION=$(jq -r '.version' upstream-config.json)
+          UP_BREAKING=$(jq -c '.breaking_versions' upstream-config.json)
+          CUR_VERSION=$(jq -r '.version' zigbee2mqtt-bastelraum/config.json)
+          CUR_BREAKING=$(jq -c '.breaking_versions' zigbee2mqtt-bastelraum/config.json)
+          echo "upstream_version=$UP_VERSION"   >> "$GITHUB_OUTPUT"
+          echo "upstream_breaking=$UP_BREAKING" >> "$GITHUB_OUTPUT"
+          echo "current_version=$CUR_VERSION"   >> "$GITHUB_OUTPUT"
+          echo "current_breaking=$CUR_BREAKING" >> "$GITHUB_OUTPUT"
+          echo "Upstream: $UP_VERSION / $UP_BREAKING"
+          echo "Current:  $CUR_VERSION / $CUR_BREAKING"
+
+      - name: Update fork config.json if changed
+        id: update
+        if: steps.extract.outputs.upstream_version != steps.extract.outputs.current_version || steps.extract.outputs.upstream_breaking != steps.extract.outputs.current_breaking
+        run: |
+          TARGET=zigbee2mqtt-bastelraum/config.json
+          jq --arg v "${{ steps.extract.outputs.upstream_version }}" \
+             --argjson b '${{ steps.extract.outputs.upstream_breaking }}' \
+             '.version = $v | .breaking_versions = $b' \
+             "$TARGET" > "$TARGET.tmp"
+          mv "$TARGET.tmp" "$TARGET"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Cleanup
+        run: rm -f upstream-config.json
+
+      - name: Commit & push
+        if: steps.update.outputs.changed == 'true'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add zigbee2mqtt-bastelraum/config.json
+          git commit -m "chore: sync version ${{ steps.extract.outputs.upstream_version }} from upstream"
+          git push
